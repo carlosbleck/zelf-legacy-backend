@@ -1,0 +1,14 @@
+[package]
+name = "constant_time_eq"
+version = "0.3.0"
+authors = ["Caleb Spare <cespare@gmail.com>"]
+description = "Compares two equal-sized byte slices in constant time."
+repository = "https://github.com/cespare/constant_time_eq"
+keywords = ["constant-time", "cryptography"]
+categories = ["cryptography", "no-std"]
+license = "MIT"
+edition = "2018"
+
+[lib]
+name = "constant_time_eq"
+path = "src/lib.rs"

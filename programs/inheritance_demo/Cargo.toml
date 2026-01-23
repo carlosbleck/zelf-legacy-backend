@@ -22,6 +22,8 @@ custom-panic = []
 
 [dependencies]
 anchor-lang = "0.32.1"
+light-sdk = "0.18.0"
+borsh = "0.10.4"
 
 
 [lints.rust]
