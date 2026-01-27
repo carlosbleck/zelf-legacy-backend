@@ -39,17 +39,53 @@ pub struct CompressedLiveness {
     pub vault_address: Pubkey,
 }
 
+/// Event emitted when an inheritance is successfully executed.
+/// Contains the encrypted password (the "reward") that the beneficiary can use
+/// to decrypt and recover the testator's mnemonic/ZelfProof.
+#[event]
+pub struct InheritanceExecuted {
+    pub vault: Pubkey,
+    pub beneficiary: Pubkey,
+    pub testator: Pubkey,
+    /// The encrypted password - this is the key to unlock the ZelfProof
+    pub encrypted_password: Vec<u8>,
+    /// The IPFS CID where the encrypted ZelfProof is stored
+    pub cid: [u8; 32],
+    /// The IPFS CID for validator data
+    pub cid_validator: [u8; 32],
+    /// The beneficiary's identity hash for verification
+    pub beneficiary_identity_hash: [u8; 32],
+}
+
+/// Event emitted when a beneficiary successfully verifies their identity.
+/// This confirms the user is a valid beneficiary for the given vault.
+#[event]
+pub struct BeneficiaryVerified {
+    pub vault: Pubkey,
+    pub beneficiary: Pubkey,
+    pub testator: Pubkey,
+    /// The IPFS CID where the encrypted ZelfProof is stored
+    pub cid: [u8; 32],
+    /// The IPFS CID for validator data
+    pub cid_validator: [u8; 32],
+    /// Whether the vault is currently claimable
+    pub is_claimable: bool,
+    /// Whether the inheritance has already been executed
+    pub executed: bool,
+}
 
 #[program]
 pub mod inheritance_demo {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     pub fn init_inheritance(
         ctx: Context<InitInheritance>,
         beneficiary: Pubkey,
         verifier: Pubkey,
         beneficiary_identity_hash: [u8; 32],
         cid: [u8; 32],
+        cid_validator: [u8; 32],
         warning_timeout_secs: i64,
         timeout_secs: i64,
         lamports: u64,
@@ -71,6 +107,7 @@ pub mod inheritance_demo {
         vault.verifier = verifier; // Set the trusted identity verifier
         vault.beneficiary_identity_hash = beneficiary_identity_hash;
         vault.cid = cid;
+        vault.cid_validator = cid_validator;
         
         let now = Clock::get()?.unix_timestamp;
         vault.last_ping = now;
@@ -264,7 +301,11 @@ pub mod inheritance_demo {
         Ok(())
     }
 
-    pub fn execute_inheritance(ctx: Context<ExecuteInheritance>) -> Result<()> {
+    /// Execute inheritance - transfers assets and reveals the encrypted password to the beneficiary.
+    /// 
+    /// # Arguments
+    /// * `transfer_funds` - If true, transfer SOL to beneficiary. If false, only mark as executed and emit password.
+    pub fn execute_inheritance(ctx: Context<ExecuteInheritance>, transfer_funds: bool) -> Result<()> {
         let now = Clock::get()?.unix_timestamp;
         let state = ctx.accounts.vault.get_state(now);
 
@@ -279,34 +320,52 @@ pub mod inheritance_demo {
             ErrorCode::InvalidVerifier
         );
 
-        // 3. Require Light root to be set (Ensures testator actually used Light Protocol)
-        require!(
-            ctx.accounts.vault.light_root.is_some(),
-            ErrorCode::InvalidLightRoot
-        );
+        // 3. Light Protocol validation (skip in debug mode)
+        // In debug mode, we don't require the Light root to be set.
+        if !ctx.accounts.vault.is_debug {
+            require!(
+                ctx.accounts.vault.light_root.is_some(),
+                ErrorCode::InvalidLightRoot
+            );
+        }
 
-        let vault_account_info = ctx.accounts.vault.to_account_info();
-        let vault_lamports = ctx.accounts.vault.lamports;
+        // 4. Transfer SOL to beneficiary (if enabled)
+        if transfer_funds {
+            let vault_account_info = ctx.accounts.vault.to_account_info();
+            let vault_lamports = ctx.accounts.vault.lamports;
 
-        require!(vault_lamports > 0, ErrorCode::NoAssets);
+            require!(vault_lamports > 0, ErrorCode::NoAssets);
 
-        // Transfer SOL to beneficiary
-        let transfer_amount = vault_lamports;
-        let rent = Rent::get()?;
-        let min_rent = rent.minimum_balance(vault_account_info.data_len());
-        let current_balance = vault_account_info.lamports();
-        
-        require!(
-            current_balance - transfer_amount >= min_rent,
-            ErrorCode::InsufficientFundsForRent
-        );
+            let transfer_amount = vault_lamports;
+            let rent = Rent::get()?;
+            let min_rent = rent.minimum_balance(vault_account_info.data_len());
+            let current_balance = vault_account_info.lamports();
+            
+            require!(
+                current_balance - transfer_amount >= min_rent,
+                ErrorCode::InsufficientFundsForRent
+            );
 
+            ctx.accounts.vault.lamports = 0;
+
+            **vault_account_info.try_borrow_mut_lamports()? -= transfer_amount;
+            **ctx.accounts.beneficiary.to_account_info().try_borrow_mut_lamports()? += transfer_amount;
+        }
+
+        // 5. Mark as executed and emit the encrypted password as the "reward"
         let vault = &mut ctx.accounts.vault;
-        vault.lamports = 0;
         vault.executed = true;
 
-        **vault_account_info.try_borrow_mut_lamports()? -= transfer_amount;
-        **ctx.accounts.beneficiary.to_account_info().try_borrow_mut_lamports()? += transfer_amount;
+        // Emit an event with the encrypted password so the beneficiary can retrieve it
+        emit!(InheritanceExecuted {
+            vault: vault.key(),
+            beneficiary: vault.beneficiary,
+            testator: vault.testator,
+            encrypted_password: vault.encrypted_password.clone(),
+            cid: vault.cid,
+            cid_validator: vault.cid_validator,
+            beneficiary_identity_hash: vault.beneficiary_identity_hash,
+        });
 
         Ok(())
     }
@@ -317,6 +376,37 @@ pub mod inheritance_demo {
     ) -> Result<()> {
         let state = &mut ctx.accounts.light_state;
         state.current_root = initial_root;
+        Ok(())
+    }
+
+    /// Verify if a given identity hash matches a vault's beneficiary_identity_hash.
+    /// This allows a user to prove they are the intended beneficiary.
+    /// 
+    /// Returns an event with vault details if the identity matches.
+    /// This is useful for beneficiaries to discover their inheritance claims.
+    pub fn verify_beneficiary_identity(
+        ctx: Context<VerifyBeneficiaryIdentity>,
+        identity_hash: [u8; 32],
+    ) -> Result<()> {
+        let vault = &ctx.accounts.vault;
+        
+        // Check if the provided identity hash matches
+        require!(
+            vault.beneficiary_identity_hash == identity_hash,
+            ErrorCode::IdentityHashMismatch
+        );
+        
+        // Emit an event with vault info for the beneficiary
+        emit!(BeneficiaryVerified {
+            vault: vault.key(),
+            beneficiary: vault.beneficiary,
+            testator: vault.testator,
+            cid: vault.cid,
+            cid_validator: vault.cid_validator,
+            is_claimable: vault.get_state(Clock::get()?.unix_timestamp) == VaultState::Claimable,
+            executed: vault.executed,
+        });
+        
         Ok(())
     }
 }
@@ -460,6 +550,16 @@ pub struct ExecuteInheritance<'info> {
     pub verifier: Signer<'info>,
 }
 
+#[derive(Accounts)]
+#[instruction(identity_hash: [u8; 32])]
+pub struct VerifyBeneficiaryIdentity<'info> {
+    #[account(
+        seeds = [b"vault", vault.testator.as_ref(), vault.beneficiary.as_ref()],
+        bump = vault.bump,
+    )]
+    pub vault: Account<'info, Vault>,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
 pub enum VaultState {
     Active,
@@ -475,6 +575,7 @@ pub struct Vault {
     pub verifier: Pubkey,                // Authorized Verifier (Oracle)
     pub beneficiary_identity_hash: [u8; 32], // ZelfProof Identity Anchor
     pub cid: [u8; 32],                    // IPFS Content ID for artifact
+    pub cid_validator: [u8; 32],          // IPFS Content ID for validator data
     pub last_ping: i64,
     pub created_at: i64,
     pub warning_timeout_secs: i64,
@@ -515,6 +616,7 @@ impl Vault {
         32 +  // verifier
         32 +  // beneficiary_identity_hash
         32 +  // cid
+        32 +  // cid_validator
         8  +  // last_ping
         8  +  // created_at
         8  +  // warning_timeout_secs
@@ -558,5 +660,7 @@ pub enum ErrorCode {
     TransitionNotAllowed,
     #[msg("Invalid verifier: Face match proof must be signed by the registered verifier")]
     InvalidVerifier,
+    #[msg("Identity hash mismatch: The provided identity does not match the beneficiary.")]
+    IdentityHashMismatch,
 }
 

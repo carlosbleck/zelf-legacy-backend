@@ -65,6 +65,7 @@ describe("inheritance demo - envelope encryption", () => {
         verifier.publicKey,
         identityHash,
         cid,
+        cid, // cid_validator (using cid as mock for now)
         warningTimeout,
         totalTimeout,
         depositAmount,
@@ -74,13 +75,14 @@ describe("inheritance demo - envelope encryption", () => {
       )
       .accounts({
         testator: provider.wallet.publicKey,
-      })
+      } as any)
       .rpc();
 
     // Verify vault was created with new fields
     let vaultAccount = await program.account.vault.fetch(vault);
     assert.equal(vaultAccount.verifier.toString(), verifier.publicKey.toString());
     assert.deepEqual(Array.from(vaultAccount.cid), cid);
+    assert.deepEqual(Array.from((vaultAccount as any).cidValidator), cid);
 
     // Update liveness with mock proof
     await program.methods
@@ -96,7 +98,7 @@ describe("inheritance demo - envelope encryption", () => {
 
     // Execute inheritance - Requires Beneficiary AND Verifier (Oracle) to sign
     await program.methods
-      .executeInheritance()
+      .executeInheritance(true) // transfer_funds = true (Test actual transfer)
       .accounts({
         vault: vault, // Explicitly provide vault to avoid resolution issues
         testator: provider.wallet.publicKey,
@@ -136,6 +138,7 @@ describe("inheritance demo - envelope encryption", () => {
         correctVerifier.publicKey,
         identityHash,
         cid,
+        cid, // cid_validator
         new anchor.BN(0),
         new anchor.BN(1),
         depositAmount,
@@ -145,7 +148,7 @@ describe("inheritance demo - envelope encryption", () => {
       )
       .accounts({
         testator: provider.wallet.publicKey,
-      })
+      } as any)
       .rpc();
 
     // Update liveness (required)
@@ -161,7 +164,7 @@ describe("inheritance demo - envelope encryption", () => {
 
     try {
       await program.methods
-        .executeInheritance()
+        .executeInheritance(false) // transfer_funds = false
         .accounts({
           vault: vault,
           testator: provider.wallet.publicKey,
@@ -172,7 +175,8 @@ describe("inheritance demo - envelope encryption", () => {
         .rpc();
       assert.fail("Should have thrown InvalidVerifier");
     } catch (err) {
-      expect(err.toString()).to.match(/InvalidVerifier|Invalid verifier/);
+      const errString = err.toString();
+      assert(errString.includes("InvalidVerifier") || errString.includes("Invalid verifier"));
     }
   });
 
@@ -201,6 +205,7 @@ describe("inheritance demo - envelope encryption", () => {
         verifier.publicKey,
         identityHash,
         cid,
+        cid, // cid_validator
         new anchor.BN(0),
         new anchor.BN(10),
         depositAmount,
@@ -210,7 +215,7 @@ describe("inheritance demo - envelope encryption", () => {
       )
       .accounts({
         testator: provider.wallet.publicKey,
-      })
+      } as any)
       .rpc();
 
     try {
@@ -221,7 +226,7 @@ describe("inheritance demo - envelope encryption", () => {
         .accounts({
           testator: provider.wallet.publicKey,
           lightState: lightState.publicKey,
-        })
+        } as any)
         .rpc();
       assert.fail("Should have thrown InvalidLightRoot");
     } catch (err) {
@@ -255,6 +260,7 @@ describe("inheritance demo - envelope encryption", () => {
         verifier.publicKey,
         identityHash,
         cid,
+        cid, // cid_validator
         new anchor.BN(0),
         new anchor.BN(10),
         depositAmount,
@@ -264,7 +270,7 @@ describe("inheritance demo - envelope encryption", () => {
       )
       .accounts({
         testator: provider.wallet.publicKey,
-      })
+      } as any)
       .rpc();
 
     // 2. Calculate the expected leaf
@@ -343,6 +349,7 @@ describe("inheritance demo - envelope encryption", () => {
         verifier.publicKey,
         identityHash,
         cid,
+        cid, // cid_validator
         new anchor.BN(0),
         new anchor.BN(100), // Long timeout
         depositAmount,
@@ -352,12 +359,12 @@ describe("inheritance demo - envelope encryption", () => {
       )
       .accounts({
         testator: provider.wallet.publicKey,
-      })
+      } as any)
       .rpc();
 
     try {
       await program.methods
-        .executeInheritance()
+        .executeInheritance(false) // transfer_funds = false
         .accounts({
           vault: vault,
           testator: provider.wallet.publicKey,
@@ -381,7 +388,8 @@ describe("inheritance demo - envelope encryption", () => {
         beneficiary.publicKey,
         anchor.web3.Keypair.generate().publicKey,
         createMockHash(),
-        createMockHash(),
+        createMockHash(), // cid
+        createMockHash(), // cid_validator
         new anchor.BN(0),
         new anchor.BN(10),
         new anchor.BN(1000000),
@@ -391,7 +399,7 @@ describe("inheritance demo - envelope encryption", () => {
       )
       .accounts({
         testator: provider.wallet.publicKey,
-      })
+      } as any)
       .rpc();
 
     const proofData = { data: Buffer.alloc(0) };
