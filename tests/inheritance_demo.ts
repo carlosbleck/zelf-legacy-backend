@@ -424,5 +424,134 @@ describe("inheritance demo - envelope encryption", () => {
       process.stdout.write("Note: create_compressed_liveness failed as expected in mock environment\n");
     }
   });
+
+  it("allows testator to cancel their will", async () => {
+    const beneficiary = anchor.web3.Keypair.generate();
+    const verifier = anchor.web3.Keypair.generate();
+
+    const [vault] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("vault"),
+        provider.wallet.publicKey.toBuffer(),
+        beneficiary.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    const depositAmount = new anchor.BN(1000000000);
+
+    // 1. Initialize
+    await program.methods
+      .initInheritance(
+        beneficiary.publicKey,
+        verifier.publicKey,
+        createMockHash(),
+        createMockHash(),
+        createMockHash(),
+        new anchor.BN(1),
+        new anchor.BN(2),
+        depositAmount,
+        createMockEncryptedPassword(),
+        createMockUnwrappedKey(),
+        true
+      )
+      .accounts({
+        testator: provider.wallet.publicKey,
+      } as any)
+      .rpc();
+
+    // Verify it exists
+    let vaultAccount = await program.account.vault.fetch(vault);
+    assert.ok(vaultAccount);
+
+    // 2. Cancel
+    await program.methods
+      .cancelWill()
+      .accounts({
+        vault: vault,
+        testator: provider.wallet.publicKey,
+      } as any)
+      .rpc();
+
+    // 3. Verify it's gone
+    try {
+      await program.account.vault.fetch(vault);
+      assert.fail("Vault account should have been closed");
+    } catch (err) {
+      assert.ok(err.toString().includes("Account does not exist"));
+    }
+  });
+
+  it("fails to cancel an already executed will", async () => {
+    const beneficiary = anchor.web3.Keypair.generate();
+    const verifier = anchor.web3.Keypair.generate();
+
+    const [vault] = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("vault"),
+        provider.wallet.publicKey.toBuffer(),
+        beneficiary.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+
+    // 1. Initialize
+    await program.methods
+      .initInheritance(
+        beneficiary.publicKey,
+        verifier.publicKey,
+        createMockHash(),
+        createMockHash(),
+        createMockHash(),
+        new anchor.BN(0),
+        new anchor.BN(1), // Short timeout
+        new anchor.BN(1000000),
+        createMockEncryptedPassword(),
+        createMockUnwrappedKey(),
+        true
+      )
+      .accounts({
+        testator: provider.wallet.publicKey,
+      } as any)
+      .rpc();
+
+    // 2. Mock liveness update
+    await program.methods
+      .updateLiveness(beneficiary.publicKey, createMockLightRoot(), [])
+      .accounts({
+        testator: provider.wallet.publicKey,
+        lightState: lightState.publicKey,
+      } as any)
+      .rpc();
+
+    // Wait for timeout
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // 3. Execute
+    await program.methods
+      .executeInheritance(false)
+      .accounts({
+        vault: vault,
+        testator: provider.wallet.publicKey,
+        beneficiary: beneficiary.publicKey,
+        verifier: verifier.publicKey,
+      } as any)
+      .signers([beneficiary, verifier])
+      .rpc();
+
+    // 4. Try to cancel - should fail because it's already executed
+    try {
+      await program.methods
+        .cancelWill()
+        .accounts({
+          vault: vault,
+          testator: provider.wallet.publicKey,
+        } as any)
+        .rpc();
+      assert.fail("Should have failed to cancel executed will");
+    } catch (err) {
+      assert.ok(err.toString().includes("AlreadyExecuted"));
+    }
+  });
 });
 

@@ -12,7 +12,7 @@ inheritance_demo = "PQ6EV39W9BQECUnf4v7MPbPCxJwgmwvUwrLY67u13QE"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

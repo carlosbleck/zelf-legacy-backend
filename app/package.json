@@ -1,0 +1,24 @@
+{
+    "name": "inheritance-light-backend",
+    "version": "1.0.0",
+    "description": "Light Protocol backend for inheritance liveness verification",
+    "main": "src/index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "node --watch src/index.js"
+    },
+    "dependencies": {
+        "@coral-xyz/anchor": "^0.30.1",
+        "@lightprotocol/compressed-token": "^0.17.1",
+        "@lightprotocol/stateless.js": "^0.17.1",
+        "@solana/web3.js": "^1.95.4",
+        "bip39": "^3.1.0",
+        "bn.js": "^5.2.1",
+        "bs58": "^6.0.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "ed25519-hd-key": "^1.3.0",
+        "express": "^4.21.0"
+    }
+}
