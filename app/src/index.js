@@ -4,6 +4,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import { livenessRouter } from './routes/liveness.js';
+import { inheritanceRouter } from './routes/inheritance.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,8 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/liveness', livenessRouter);
+app.use('/api/inheritance', inheritanceRouter);
+
 
 // Error handler
 app.use((err, req, res, next) => {
