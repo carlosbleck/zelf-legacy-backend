@@ -1,0 +1,32 @@
+
+> inheritance-light-backend@1.0.0 start
+> node src/index.js
+
+🚀 Light Protocol Backend running on port 3000
+📡 Solana RPC: https://devnet.helius-rpc.com/?api-key=b7890cab-2775-4ee2-82a6-f83f2f2c757c
+📋 Program ID: PQ6EV39W9BQECUnf4v7MPbPCxJwgmwvUwrLY67u13QE
+
+🔐 Create Inheritance Request
+   Beneficiary: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+   Is Debug: false
+   Testator: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+
+🔐 Create Inheritance Request
+   Beneficiary: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+   Is Debug: false
+   Testator: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+
+🔐 Create Inheritance Request
+   Beneficiary: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+   Is Debug: false
+   Testator: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+
+🔐 Create Inheritance Request
+   Beneficiary: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+   Is Debug: false
+   Testator: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+
+🔐 Create Inheritance Request
+   Beneficiary: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
+   Is Debug: false
+   Testator: fDVAZqK2Mh5wvWryyMiTabnEFbSBwHB5biYBndj5fx8
