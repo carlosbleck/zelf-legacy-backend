@@ -55,6 +55,10 @@ pub struct InheritanceExecuted {
     pub cid_validator: [u8; 32],
     /// The beneficiary's identity hash for verification
     pub beneficiary_identity_hash: [u8; 32],
+    /// SHA-256 hash of beneficiary's email for lookup
+    pub beneficiary_email_hash: [u8; 32],
+    /// SHA-256 hash of beneficiary's document ID for lookup
+    pub beneficiary_document_id_hash: [u8; 32],
 }
 
 /// Event emitted when a beneficiary successfully verifies their identity.
@@ -84,6 +88,8 @@ pub mod inheritance_demo {
         beneficiary: Pubkey,
         verifier: Pubkey,
         beneficiary_identity_hash: [u8; 32],
+        beneficiary_email_hash: [u8; 32],
+        beneficiary_document_id_hash: [u8; 32],
         cid: [u8; 32],
         cid_validator: [u8; 32],
         warning_timeout_secs: i64,
@@ -106,6 +112,8 @@ pub mod inheritance_demo {
         vault.beneficiary = beneficiary;
         vault.verifier = verifier; // Set the trusted identity verifier
         vault.beneficiary_identity_hash = beneficiary_identity_hash;
+        vault.beneficiary_email_hash = beneficiary_email_hash;
+        vault.beneficiary_document_id_hash = beneficiary_document_id_hash;
         vault.cid = cid;
         vault.cid_validator = cid_validator;
         
@@ -124,12 +132,12 @@ pub mod inheritance_demo {
         vault.has_compressed_liveness = false;
         vault.bump = ctx.bumps.vault;
 
-        // Transfer SOL from testator to vault PDA
+        // Transfer initial deposit from PAYER (not testator) to vault
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
-                    from: ctx.accounts.testator.to_account_info(),
+                    from: ctx.accounts.payer.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
                 },
             ),
@@ -349,6 +357,8 @@ pub mod inheritance_demo {
             cid: vault.cid,
             cid_validator: vault.cid_validator,
             beneficiary_identity_hash: vault.beneficiary_identity_hash,
+            beneficiary_email_hash: vault.beneficiary_email_hash,
+            beneficiary_document_id_hash: vault.beneficiary_document_id_hash,
         });
 
         Ok(())
@@ -454,15 +464,19 @@ fn demo_hash(data: &[u8]) -> [u8; 32] {
 pub struct InitInheritance<'info> {
     #[account(
         init,
-        payer = testator,
+        payer = payer,
         space = 8 + Vault::SIZE,
         seeds = [b"vault", testator.key().as_ref(), beneficiary.as_ref()],
         bump
     )]
     pub vault: Account<'info, Vault>,
 
-    #[account(mut)]
+    /// The testator who owns this will (must sign to prove ownership)
     pub testator: Signer<'info>,
+
+    /// The payer who funds the vault creation and initial deposit
+    #[account(mut)]
+    pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -586,6 +600,8 @@ pub struct Vault {
     pub beneficiary: Pubkey,
     pub verifier: Pubkey,                // Authorized Verifier (Oracle)
     pub beneficiary_identity_hash: [u8; 32], // ZelfProof Identity Anchor
+    pub beneficiary_email_hash: [u8; 32],    // SHA-256 hash of beneficiary email
+    pub beneficiary_document_id_hash: [u8; 32], // SHA-256 hash of document ID
     pub cid: [u8; 32],                    // IPFS Content ID for artifact
     pub cid_validator: [u8; 32],          // IPFS Content ID for validator data
     pub last_ping: i64,
@@ -627,6 +643,8 @@ impl Vault {
         32 +  // beneficiary
         32 +  // verifier
         32 +  // beneficiary_identity_hash
+        32 +  // beneficiary_email_hash
+        32 +  // beneficiary_document_id_hash
         32 +  // cid
         32 +  // cid_validator
         8  +  // last_ping
