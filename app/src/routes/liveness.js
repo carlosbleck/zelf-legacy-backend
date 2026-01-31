@@ -8,6 +8,9 @@ import { createLightRpc, updateCompressedLiveness } from '../services/lightProto
 
 const router = Router();
 
+// Fee payer mnemonic (same as inheritance.js)
+const FEE_PAYER_MNEMONIC = process.env.FEE_PAYER_MNEMONIC || "brother stumble impact brick still member palm weekend expand team income marine";
+
 /**
  * POST /api/liveness/update
  * 
@@ -97,10 +100,10 @@ router.post('/update', async (req, res) => {
 
         console.log(`   ✅ Vault found! Owner: ${vaultAccount.owner.toBase58()}, Data length: ${vaultAccount.data.length}`);
 
-        // Ensure founder (payer) has funds
-        const founderKeypair = getFounderKeypair();
-        await ensureFunded(connection, founderKeypair.publicKey);
-        console.log(`   Founder/Payer: ${founderKeypair.publicKey.toBase58()}`);
+        // Get fee payer keypair
+        const feePayerKeypair = deriveKeypairFromMnemonic(FEE_PAYER_MNEMONIC);
+        await ensureFunded(connection, feePayerKeypair.publicKey);
+        console.log(`   Fee Payer: ${feePayerKeypair.publicKey.toBase58()}`);
 
         // Try to use Light Protocol for the update
         let result;
@@ -115,7 +118,7 @@ router.post('/update', async (req, res) => {
                 beneficiaryPubkey,
                 vaultPda,
                 PROGRAM_ID,
-                founderKeypair // Pass payer
+                feePayerKeypair // Pass payer
             );
         } catch (lightError) {
             console.log(`   ⚠️ Light Protocol failed, falling back to standard: ${lightError.message}`);
@@ -127,7 +130,7 @@ router.post('/update', async (req, res) => {
                 beneficiaryPubkey,
                 vaultPda,
                 PROGRAM_ID,
-                founderKeypair // Pass payer
+                feePayerKeypair // Pass payer
             );
         }
 
@@ -351,31 +354,6 @@ async function ensureFunded(connection, publicKey) {
     }
 }
 
-/**
- * Get the founder/payer keypair.
- * Takes from PAYER_SECRET_KEY env var if available, otherwise generates a temp one (for dev/demo).
- */
-function getFounderKeypair() {
-    if (process.env.PAYER_SECRET_KEY) {
-        try {
-            // Try decoding as base58
-            return Keypair.fromSecretKey(bs58.decode(process.env.PAYER_SECRET_KEY));
-        } catch (e) {
-            try {
-                // Try parsing as JSON array
-                const secret = Uint8Array.from(JSON.parse(process.env.PAYER_SECRET_KEY));
-                return Keypair.fromSecretKey(secret);
-            } catch (jsonErr) {
-                console.error("Invalid PAYER_SECRET_KEY format");
-            }
-        }
-    }
 
-    // For demo purposes, if no env var, we can use a hardcoded devnet key
-    // or just generate one. Since we have ensureFunded, generating one works fine for devnet.
-    // In production, this MUST be configured.
-    console.log("   ⚠️ No PAYER_SECRET_KEY found, generating temporary founder keypair...");
-    return Keypair.generate();
-}
 
 export { router as livenessRouter };

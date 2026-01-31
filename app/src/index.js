@@ -5,6 +5,8 @@ import express from 'express';
 import cors from 'cors';
 import { livenessRouter } from './routes/liveness.js';
 import { inheritanceRouter } from './routes/inheritance.js';
+import { emailRouter } from './routes/email.js';
+import { cronRouter } from './routes/cron.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +23,8 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api/liveness', livenessRouter);
 app.use('/api/inheritance', inheritanceRouter);
+app.use('/api/email', emailRouter);
+app.use('/api/cron', cronRouter);
 
 
 // Error handler

@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import * as bip39 from 'bip39';
 import { derivePath } from 'ed25519-hd-key';
 import { createLightRpc } from '../services/lightProtocol.js';
+import { sendInheritanceNotification } from '../services/email.js';
 
 const router = Router();
 
@@ -207,6 +208,22 @@ router.post('/create', async (req, res) => {
         });
 
         await connection.confirmTransaction(signature, 'confirmed');
+
+        // Automatically send email notification if beneficiaryEmail is provided
+        /*
+        if (beneficiaryEmail) {
+            try {
+                // Use CID as the tagName for retrieval instruction
+                // We truncate CID or use it as is based on how you search for it
+                const actualTagName = cid || 'inheritance-plan';
+                await sendInheritanceNotification(beneficiaryEmail, actualTagName, 'Your loved one');
+                console.log(`   📧 Automatic email notification sent to ${beneficiaryEmail}`);
+            } catch (emailError) {
+                console.error('   ⚠️ Failed to send automatic email notification:', emailError.message);
+                // We don't fail the request if just the email fails
+            }
+        }
+        */
 
         console.log(`✅ Inheritance created!`);
         console.log(`   Signature: ${signature}`);

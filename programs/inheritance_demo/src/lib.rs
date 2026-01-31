@@ -216,49 +216,66 @@ pub mod inheritance_demo {
         Ok(())
     }
 
-    pub fn update_liveness(
-        ctx: Context<UpdateLiveness>,
-        _beneficiary: Pubkey,
-        light_root: [u8; 32],
-        proof: Vec<[u8; 32]>,
+    /// Update liveness using Light Protocol ZK Compression.
+    /// This function updates the compressed liveness account in the state tree
+    /// and updates the vault's last_ping timestamp.
+    pub fn update_liveness<'info>(
+        ctx: Context<'_, '_, '_, 'info, UpdateLiveness<'info>>,
+        proof_data: ValidityProofData,
+        output_tree_index: u8,
     ) -> Result<()> {
         let vault = &mut ctx.accounts.vault;
+        let now = Clock::get()?.unix_timestamp;
 
-        // --- Light Protocol Validation ---
-        if !vault.is_debug {
-            // Check if the light_state account has data (i.e., it's an initialized registry)
-            let light_state_data = ctx.accounts.light_state.try_borrow_data()?;
+        // --- Light Protocol CPI Update ---
+        if vault.has_compressed_liveness && !vault.is_debug {
+            // Deserialize the validity proof from raw bytes
+            let proof = LightValidityProof::try_from_slice(&proof_data.data)
+                .map_err(|_| ErrorCode::InvalidLightProof)?;
             
-            if light_state_data.len() >= 40 { 
-                // A registry exists, perform full ZK verification
-                let stored_root: [u8; 32] = light_state_data[8..40]
-                    .try_into()
-                    .map_err(|_| ErrorCode::InvalidLightRoot)?;
-                
-                require!(
-                    stored_root == light_root,
-                    ErrorCode::InvalidLightRoot
-                );
-                
-                // Create a leaf hash representing the testator's liveness state
-                let leaf = demo_hash(
-                    &[
-                        vault.testator.as_ref(),
-                        &vault.last_ping.to_le_bytes()
-                    ].concat()
-                );
+            // Create Light CPI accounts from remaining accounts
+            let light_cpi_accounts = CpiAccounts::new(
+                ctx.accounts.fee_payer.as_ref(),
+                ctx.remaining_accounts,
+                crate::LIGHT_CPI_SIGNER,
+            );
 
-                // Verify the Merkle proof
-                require!(
-                    verify_merkle_proof(light_root, leaf, proof),
-                    ErrorCode::InvalidLightProof
-                );
-            } else {
-                // No registry account provided or uninitialized (System Program)
-                // In Demo mode on Devnet, we allow the update to proceed to show the flow
-                // but we still store the light_root for state machine transitions.
-                msg!("Light Protocol Registry not found. Skipping proof verification for Demo.");
-            }
+            // Derive the address for this testator's liveness account
+            // Must match the address used in create_compressed_liveness
+            let address_tree_pubkey = ctx.remaining_accounts
+                .get(0)
+                .ok_or(ErrorCode::InvalidLightRoot)?
+                .key();
+
+            let (address, _) = derive_address(
+                &[b"liveness", ctx.accounts.testator.key().as_ref()],
+                &address_tree_pubkey,
+                &crate::ID,
+            );
+
+            // Update the compressed liveness account with new timestamp
+            let mut liveness_account = LightAccount::<CompressedLiveness>::new_update(
+                &crate::ID,
+                Some(address),
+                output_tree_index,
+            );
+
+            liveness_account.testator = ctx.accounts.testator.key();
+            liveness_account.last_ping = now;
+            liveness_account.vault_address = vault.key();
+
+            // CPI to Light System Program to update the compressed account
+            LightSystemProgramCpi::new_cpi(crate::LIGHT_CPI_SIGNER, proof)
+                .with_light_account(liveness_account)
+                .map_err(|_| ErrorCode::InvalidLightProof)?
+                .invoke(light_cpi_accounts)
+                .map_err(|_| ErrorCode::InvalidLightProof)?;
+
+            msg!("✅ Compressed liveness updated via Light Protocol");
+        } else if vault.is_debug {
+            msg!("⚠️ Debug mode: Skipping Light Protocol verification");
+        } else {
+            msg!("ℹ️ No compressed liveness account, using standard update");
         }
         // ---------------------------------
 
@@ -269,9 +286,11 @@ pub mod inheritance_demo {
                 ErrorCode::NoUnwrappedKey
             );
 
-            // Derive K_light from Light root using Keccak for security
+            // Derive K_light from a deterministic source
+            // In production with real Light Protocol, this would use the actual state root
+            let mock_root = demo_hash(&[vault.testator.as_ref(), &now.to_le_bytes()].concat());
             let k_light = derive_key_from_light(
-                &light_root,
+                &mock_root,
                 &vault.key(),
                 &vault.beneficiary,
             );
@@ -285,10 +304,10 @@ pub mod inheritance_demo {
 
             vault.encrypted_key = Some(encrypted_key);
             vault.unwrapped_key = None; // Clear plaintext
+            vault.light_root = Some(mock_root);
         }
 
-        vault.light_root = Some(light_root);
-        vault.last_ping = Clock::get()?.unix_timestamp;
+        vault.last_ping = now;
 
         Ok(())
     }
@@ -432,22 +451,6 @@ fn derive_key_from_light(
     demo_hash(&key)
 }
 
-fn verify_merkle_proof(root: [u8; 32], leaf: [u8; 32], proof: Vec<[u8; 32]>) -> bool {
-    let mut current_hash = leaf;
-    for node in proof {
-        let mut data = [0u8; 64];
-        if current_hash < node {
-            data[..32].copy_from_slice(&current_hash);
-            data[32..].copy_from_slice(&node);
-        } else {
-            data[..32].copy_from_slice(&node);
-            data[32..].copy_from_slice(&current_hash);
-        }
-        current_hash = demo_hash(&data);
-    }
-    current_hash == root
-}
-
 /// A simple XOR + bit-shift hash for demonstration purposes.
 /// Replaces Keccak256 to avoid Edition 2024 build conflicts.
 fn demo_hash(data: &[u8]) -> [u8; 32] {
@@ -501,23 +504,28 @@ pub struct CreateCompressedLiveness<'info> {
     // Light Protocol system accounts are passed via remaining_accounts
 }
 
+/// Accounts for updating liveness via Light Protocol
 #[derive(Accounts)]
-#[instruction(beneficiary: Pubkey)]
 pub struct UpdateLiveness<'info> {
     #[account(
         mut,
-        seeds = [b"vault", testator.key().as_ref(), beneficiary.as_ref()],
+        seeds = [b"vault", testator.key().as_ref(), vault.beneficiary.as_ref()],
         bump = vault.bump,
         has_one = testator @ ErrorCode::Unauthorized
     )]
     pub vault: Account<'info, Vault>,
+    
     #[account(mut)]
     pub testator: Signer<'info>,
-
-    /// Light Protocol v3 State Merkle Tree Account
-    /// In production, this would be the actual Light Protocol state tree account.
-    /// CHECK: This account stores the Merkle tree root for compressed accounts.
-    pub light_state: AccountInfo<'info>,
+    
+    #[account(mut)]
+    pub fee_payer: Signer<'info>,
+    
+    // Light Protocol system accounts are passed via remaining_accounts:
+    // - Address Merkle Tree
+    // - State Tree
+    // - Light System Program
+    // These are dynamically provided by the Light SDK client
 }
 
 // Removed InitLightRegistry - in production, Light Protocol manages its own state trees
