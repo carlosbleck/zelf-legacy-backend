@@ -1,128 +1,86 @@
-# How to Run the Backend Server
+# 🛡️ Zelf Legacy: Private Heritage on Solana
 
-This guide explains how to set up and run the Node.js backend server for the Inheritance Demo.
+### *Secure, Private, and Cost-Effective Inheritance powered by Light Protocol ZK Compression*
 
-## Prerequisites
+[![Solana Privacy Hack](https://img.shields.io/badge/Solana-Privacy_Hack-blueviolet?style=for-the-badge&logo=solana)](https://solana.com/es/privacyhack)
+[![Light Protocol](https://img.shields.io/badge/Powered_by-Light_Protocol-green?style=for-the-badge)](https://www.lightprotocol.com/)
 
--   Node.js (v16+ recommended)
--   npm (comes with Node.js)
+---
 
-## Setup
+## 📖 Overview
 
-1.  Navigate to the `app` directory:
-    ```bash
-    cd app
-    ```
+**Zelf Legacy** is a decentralized inheritance protocol that solves the "Dead Man's Switch" problem without compromising user privacy. By leveraging **Light Protocol's ZK Compression**, Zelf enables testators to maintain a "Proof of Life" on-chain at a fraction of the cost of traditional state, while keeping sensitive beneficiary data and asset details completely private through Zero-Knowledge proofs and selective disclosure.
 
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
+## 🏗️ Architecture & Flow
 
-3.  **Environment Variables**:
-    -   Ensure you have a `.env` file in the `app` directory.
-    -   If not, you can copy the example:
-        ```bash
-        cp .env.example .env
-        ```
-    -   Open `.env` and configure the necessary variables (e.g., RPC URL, Keypair paths).
+The following diagram illustrates how Zelf Legacy utilizes Light Protocol to maintain privacy and efficiency:
 
-## Running the Server
+```mermaid
+sequenceDiagram
+    participant T as Testator (User)
+    participant B as Beneficiary
+    participant ZB as Zelf Backend (Node.js)
+    participant LP as Light Protocol (ZK Compression)
+    participant SC as Inheritance Smart Contract (Solana)
 
-### Development Mode
-To run the server with hot-reloading (restarts on file changes):
+    Note over T, SC: Phase 1: Creation & Privacy
+    T->>ZB: Create Will (Encrypted PII + Beneficiary Hash)
+    ZB->>SC: Initialize Vault (Stored on-chain)
+    ZB->>LP: Create Compressed Liveness Account
+    LP-->>ZB: ZK Proof of Initial State
 
-```bash
-npm run dev
+    Note over T, SC: Phase 2: Maintenance (Cost-Efficient)
+    loop Every 30 Days
+        T->>ZB: Liveness Update (Selfie/Auth)
+        ZB->>LP: Update Compressed State
+        LP-->>ZB: New Root + Validity Proof
+        ZB->>SC: Update Liveness with ZK Proof
+    end
+
+    Note over T, SC: Phase 3: Inheritance Execution
+    B->>ZB: Request Inheritance (Identity Verification)
+    ZB->>SC: Execute Inheritance (Verifier signs)
+    SC->>B: Transfer Assets + Release Encrypted Password
+    B->>B: Decrypt Legacy Files
 ```
 
-### Production Mode
-To run the server normally:
+## 🔐 Privacy-First Features
 
+- **ZK-Compressed Liveness**: Instead of storing every liveness heartbeat in expensive account data, we use Light Protocol to compress the "Proof of Life" history into a single ZK-root.
+- **Beneficiary PII Hashing**: Sensitive data like emails and Document IDs are NEVER stored in plain text. We use SHA-256 hashing to ensure only the rightful owner can verify their identity.
+- **Encrypted Legacy Vaults**: The access keys to inheritance files are stored as encrypted blobs, only decryptable by the beneficiary after a successful on-chain execution.
+- **Selective Disclosure**: No one on the network knows who the beneficiary is or what assets are being inherited until the "Proof of Death" (timeout) is triggered.
+
+## 🛠️ Technology Stack
+
+- **Smart Contract**: Anchor (Solana) with custom Light Protocol verification logic.
+- **Backend (this repo)**: Node.js / Express with `@lightprotocol/stateless.js`.
+- **Privacy**: Zero-Knowledge Proofs for state validity and SHA-256 for identity masking.
+- **Storage**: ZK Compression for minimized on-chain footprint.
+
+## 🚀 Hackathon Implementation Details
+
+During the **Solana Privacy Hack**, we focused on:
+1. **Real ZK Compression**: Moving from standard Solana accounts to compressed accounts for liveness tracking.
+2. **Identity Obfuscation**: Implementing the hashing layer for all beneficiary metadata.
+3. **Photon Integration**: Using the Photon RPC to index and retrieve compressed liveness accounts for the testator.
+
+---
+
+## ⚙️ Development & Setup
+
+For technical instructions on how to run the components of this project, please refer to the following guides:
+
+- **[Backend Setup Guide](app/README.md)**: Node.js server, API documentation, and Light Protocol integration.
+- **[Smart Contract Guide](RUN_SMART_CONTRACT.md)**: Building, testing, and deploying the Anchor program.
+
+### Quick Start (Backend)
 ```bash
+cd app
+npm install
 npm start
 ```
 
-## Troubleshooting
+---
 
--   **Port Conflicts**: By default, the server usually runs on port 3000 (check `src/index.js` or `.env`). If that port is busy, change the `PORT` in `.env`.
--   **Dependencies**: If you encounter missing modules, try deleting `node_modules` and `package-lock.json`, then run `npm install` again.
-
------------------------------------------------------------------
-
-# How to Run the Anchor Smart Contract
-
-This guide explains how to build, test, and deploy the Anchor smart contract for the Inheritance Demo.
-
-## Prerequisites
-
--   **Rust**: Install via rustup.
--   **Solana CLI**: Ensure `solana-test-validator` and `solana` are in your PATH.
--   **Anchor CLI**: Install via avm (Anchor Version Manager) or cargo.
--   **Yarn/Npm**: For installing JavaScript dependencies.
-
-## Setup
-
-1.  **Install Root Dependencies**:
-    Navigate to the project root and install the dependencies:
-    ```bash
-    npm install
-    # or
-    yarn install
-    ```
-
-## Building the Program
-
-To compile the Rust smart contract:
-
-```bash
-anchor build
-```
-
-This generates the IDL and keys in `target/idl/` and `target/deploy/`.
-
-## Running Tests (Localnet)
-
-The easiest way to run the smart contract logic is via the test suite, which spins up a local validator autonomously.
-
-### Using the Helper Script
-We have a script that automatically switches the cluster to `localnet` and runs tests:
-
-```bash
-./test_local.sh
-```
-
-### Manual Method
-1.  Ensure `Anchor.toml` has `[programs.localnet]` configured and `cluster = "localnet"`.
-2.  Run the tests:
-    ```bash
-    anchor test
-    ```
-
-## Running a Local Validator
-
-If you want to keep the validator running efficiently for frontend/backend development:
-
-1.  **Start the Validator**:
-    ```bash
-    solana-test-validator
-    ```
-
-2.  **Deploy the Program** (in a new terminal):
-    ```bash
-    anchor deploy --provider.cluster localnet
-    ```
-
-3.  **Run Scripts**:
-    You can now interact with the deployed program using your own client scripts or the backend server.
-
-## Troubleshooting
-
--   **"Account not found"**: Ensure your local wallet has SOL.
-    ```bash
-    solana airdrop 2
-    ```
--   **Program ID Mismatch**: If you rebuilt the program, the Program ID might have changed.
-    -   Check `target/deploy/inheritance_demo-keypair.json`.
-    -   Run `solana address -k target/deploy/inheritance_demo-keypair.json` to get the new ID.
-    -   Update `lib.rs` and `Anchor.toml` with this new ID against your validator.
+*Built with ❤️ for the Solana Privacy Hack 2026.*

@@ -380,13 +380,14 @@ router.post('/execute', async (req, res) => {
         // Parse encrypted password from vault data for response
         // Vault struct layout:
         // discriminator(8) + testator(32) + beneficiary(32) + verifier(32) + 
-        // identity_hash(32) + cid(32) + cid_validator(32) + 
+        // identity_hash(32) + email_hash(32) + doc_id_hash(32) + 
+        // cid(32) + cid_validator(32) + 
         // last_ping(8) + created_at(8) + warning_timeout(8) + timeout(8) + 
-        // executed(1) + lamports(8) = 241 bytes
+        // executed(1) + lamports(8) = 305 bytes
         // Then: encrypted_password Vec<u8> (4 bytes len + data)
         let encryptedPassword = '';
         try {
-            const passwordLenOffset = 241;
+            const passwordLenOffset = 305;
             const passwordLen = vaultData.readUInt32LE(passwordLenOffset);
             console.log(`   Password length at offset ${passwordLenOffset}: ${passwordLen}`);
             if (passwordLen > 0 && passwordLen < 256) {

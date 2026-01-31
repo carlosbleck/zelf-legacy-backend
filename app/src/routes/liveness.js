@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Connection, PublicKey, Keypair, Transaction, SystemProgram } from '@solana/web3.js';
+import { Connection, PublicKey, Keypair, Transaction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import bs58 from 'bs58';
 import crypto from 'crypto';
 import * as bip39 from 'bip39';
@@ -97,6 +97,11 @@ router.post('/update', async (req, res) => {
 
         console.log(`   ✅ Vault found! Owner: ${vaultAccount.owner.toBase58()}, Data length: ${vaultAccount.data.length}`);
 
+        // Ensure founder (payer) has funds
+        const founderKeypair = getFounderKeypair();
+        await ensureFunded(connection, founderKeypair.publicKey);
+        console.log(`   Founder/Payer: ${founderKeypair.publicKey.toBase58()}`);
+
         // Try to use Light Protocol for the update
         let result;
         try {
@@ -109,7 +114,8 @@ router.post('/update', async (req, res) => {
                 testatorKeypair,
                 beneficiaryPubkey,
                 vaultPda,
-                PROGRAM_ID
+                PROGRAM_ID,
+                founderKeypair // Pass payer
             );
         } catch (lightError) {
             console.log(`   ⚠️ Light Protocol failed, falling back to standard: ${lightError.message}`);
@@ -120,7 +126,8 @@ router.post('/update', async (req, res) => {
                 testatorKeypair,
                 beneficiaryPubkey,
                 vaultPda,
-                PROGRAM_ID
+                PROGRAM_ID,
+                founderKeypair // Pass payer
             );
         }
 
@@ -243,7 +250,7 @@ function deriveKeypairFromMnemonic(input) {
  * Build and send the update_liveness transaction.
  * Uses mock Light Protocol data for debug mode.
  */
-async function buildAndSendLivenessUpdate(connection, testatorKeypair, beneficiaryPubkey, vaultPda, programId) {
+async function buildAndSendLivenessUpdate(connection, testatorKeypair, beneficiaryPubkey, vaultPda, programId, payerKeypair) {
     const { blockhash } = await connection.getLatestBlockhash();
 
     // Generate mock Light Protocol root (for is_debug=true mode)
@@ -285,11 +292,11 @@ async function buildAndSendLivenessUpdate(connection, testatorKeypair, beneficia
 
     const tx = new Transaction();
     tx.recentBlockhash = blockhash;
-    tx.feePayer = testatorKeypair.publicKey;
+    tx.feePayer = payerKeypair.publicKey;
     tx.add(instruction);
 
     // Sign and send
-    const signature = await connection.sendTransaction(tx, [testatorKeypair], {
+    const signature = await connection.sendTransaction(tx, [payerKeypair, testatorKeypair], {
         skipPreflight: false,
         preflightCommitment: 'confirmed',
     });
@@ -325,6 +332,50 @@ function generateMockLightRoot(testatorPubkey) {
 
     const hash = crypto.createHash('sha256').update(seed).digest();
     return new Uint8Array(hash);
+}
+
+/**
+ * Ensure the account has enough SOL for fees.
+ */
+async function ensureFunded(connection, publicKey) {
+    try {
+        const balance = await connection.getBalance(publicKey);
+        if (balance < 0.005 * LAMPORTS_PER_SOL) {
+            console.log(`   💸 Funding founder/payer ${publicKey.toBase58()}...`);
+            const signature = await connection.requestAirdrop(publicKey, 1 * LAMPORTS_PER_SOL);
+            await connection.confirmTransaction(signature, 'confirmed');
+            console.log(`   ✅ Funded: ${signature}`);
+        }
+    } catch (error) {
+        console.error(`   ⚠️ Failed to fund account: ${error.message}`);
+    }
+}
+
+/**
+ * Get the founder/payer keypair.
+ * Takes from PAYER_SECRET_KEY env var if available, otherwise generates a temp one (for dev/demo).
+ */
+function getFounderKeypair() {
+    if (process.env.PAYER_SECRET_KEY) {
+        try {
+            // Try decoding as base58
+            return Keypair.fromSecretKey(bs58.decode(process.env.PAYER_SECRET_KEY));
+        } catch (e) {
+            try {
+                // Try parsing as JSON array
+                const secret = Uint8Array.from(JSON.parse(process.env.PAYER_SECRET_KEY));
+                return Keypair.fromSecretKey(secret);
+            } catch (jsonErr) {
+                console.error("Invalid PAYER_SECRET_KEY format");
+            }
+        }
+    }
+
+    // For demo purposes, if no env var, we can use a hardcoded devnet key
+    // or just generate one. Since we have ensureFunded, generating one works fine for devnet.
+    // In production, this MUST be configured.
+    console.log("   ⚠️ No PAYER_SECRET_KEY found, generating temporary founder keypair...");
+    return Keypair.generate();
 }
 
 export { router as livenessRouter };

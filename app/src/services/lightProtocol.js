@@ -130,7 +130,8 @@ export async function updateCompressedLiveness(
     testatorKeypair,
     beneficiaryPubkey,
     vaultPda,
-    programId
+    programId,
+    payerKeypair
 ) {
     console.log(`📝 Updating compressed liveness via Light Protocol...`);
 
@@ -187,7 +188,8 @@ export async function updateCompressedLiveness(
             vaultPda,
             programId,
             lightRoot,
-            proof
+            proof,
+            payerKeypair
         );
 
         return {
@@ -214,7 +216,8 @@ async function submitLivenessUpdate(
     vaultPda,
     programId,
     lightRoot,
-    proof
+    proof,
+    payerKeypair
 ) {
     const { blockhash } = await connection.getLatestBlockhash();
 
@@ -253,14 +256,14 @@ async function submitLivenessUpdate(
 
     const tx = new Transaction();
     tx.recentBlockhash = blockhash;
-    tx.feePayer = testatorKeypair.publicKey;
+    tx.feePayer = payerKeypair.publicKey;
     tx.add(instruction);
 
     // Sign and send
     const signature = await sendAndConfirmTransaction(
         connection,
         tx,
-        [testatorKeypair],
+        [payerKeypair, testatorKeypair],
         { commitment: 'confirmed' }
     );
 
